@@ -58,9 +58,11 @@ lint:
 
 # Lint the Go packages this branch touched, on the lines it changed. Same
 # findings as CI's changed-lines step at a fraction of the cost of ./... .
-# BASE_REF=origin/<pr-base> when not main.
+# BASE_REF defaults to upstream/main when an upstream remote exists, otherwise
+# origin/main. For a non-main PR base, pass BASE_REF=upstream/<pr-base> in a fork
+# checkout, or BASE_REF=origin/<pr-base> without an upstream remote.
 lint-changed:
-	BASE_REF=$(BASE_REF) scripts/lint-changed.sh
+	BASE_REF="$(BASE_REF)" scripts/lint-changed.sh
 
 # Frontend test files that fail on main today. This list is shrink-only: delete
 # an entry along with its fix, and never extend it to land a change. The Go
@@ -300,14 +302,15 @@ verify-apiv2-web-types:
 # once contracts/api/v2/LOCKED exists no approval applies. The spec lint is
 # the internal/contractspec tests, which also run the seeded breaking fixture
 # through the tool so an upgrade that stops detecting it fails here.
-BASE_REF ?= origin/main
+BASE_REF ?= $(shell scripts/lint-changed.sh --print-base-ref)
 verify-apiv2-contract:
 ifneq ($(CONTRACT_GO_TESTS),0)
 	@go test -count=1 ./internal/contractspec/ \
 		|| { echo "::error::$(APIV2_OPENAPI) fails the spec lint or the diff tool no longer detects the seeded breaking fixture"; exit 1; }
 endif
-	@tmp=$$(mktemp -d) && trap 'rm -rf "$$tmp"' EXIT && \
-		base=$$(git merge-base $(BASE_REF) HEAD) && \
+	@base=$$(git merge-base "$(BASE_REF)" HEAD) || \
+		{ echo "::error::merge base was not found for BASE_REF=$(BASE_REF)" >&2; exit 1; }; \
+		tmp=$$(mktemp -d) && trap 'rm -rf "$$tmp"' EXIT && \
 		{ git show "$$base:$(APIV2_OPENAPI)" > "$$tmp/base.json" 2>/dev/null || : ; } && \
 		go run ./cmd/apiv2-contract-diff -base "$$tmp/base.json" -revision $(APIV2_OPENAPI) -contracts contracts/api/v2 \
 		|| { echo "::error::$(APIV2_OPENAPI) has an unapproved breaking change against $$base; see contracts/api/v2/breaking-approvals.schema.json"; exit 1; }

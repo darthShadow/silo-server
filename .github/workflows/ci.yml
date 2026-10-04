@@ -8,6 +8,7 @@ on:
       # Integration branch for the API v2 program (#135). Stacked PRs merge
       # here first; the merge commits need the same gate as main.
       - apiv2
+      - local-main
   workflow_dispatch:
   schedule:
     - cron: '23 4 * * 1'
@@ -37,6 +38,6 @@ jobs:
     permissions:
       actions: write
       contents: read
-    uses: Silo-Server/silo-server/.github/workflows/trusted-linux-ci.yml@main
+    uses: ./.github/workflows/trusted-linux-ci.yml
     with:
       self_hosted: false

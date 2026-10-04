@@ -33,7 +33,7 @@ jobs:
       image_version: ${{ steps.identity.outputs.image_version }}
     if: >-
       (github.event_name == 'workflow_dispatch' &&
-       contains(fromJSON('["refs/heads/main","refs/heads/apiv2"]'), github.ref)) ||
+       contains(fromJSON('["refs/heads/main","refs/heads/apiv2","refs/heads/local-main"]'), github.ref)) ||
       (github.event_name == 'workflow_run' &&
        github.event.workflow_run.conclusion == 'success' &&
        github.event.workflow_run.event == 'push' &&
@@ -79,7 +79,7 @@ jobs:
       contents: read
       actions: read
       packages: write
-    uses: Silo-Server/silo-server/.github/workflows/trusted-linux-build.yml@main
+    uses: ./.github/workflows/trusted-linux-build.yml
     with:
       platform: ${{ matrix.platform }}
       build_number: ${{ needs.prepare.outputs.build_number }}

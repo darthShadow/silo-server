@@ -116,6 +116,44 @@ sys.exit(int(os.environ.get('LINT_EXIT', '0')))
     def packages(self, output):
         return [arg for arg in output["args"] if arg.startswith("./")]
 
+    def test_default_base_uses_upstream_when_remote_exists(self):
+        self.git("remote", "add", "upstream", "https://example.invalid/upstream.git")
+        self.git("update-ref", "refs/remotes/upstream/main", self.base)
+        self.write("internal/a/code.go", "package a\n\nconst Value = 2\n")
+        self.commit()
+        self.git("update-ref", "refs/remotes/origin/main", "HEAD")
+        self.env.pop("BASE_REF")
+        result, output = self.run_lint()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIsNotNone(output, result.stdout + result.stderr)
+        self.assertEqual(self.packages(output), ["./internal/a"])
+        self.assertIn("since upstream/main", result.stderr)
+        self.assertIn("+const Value = 2", output["patch"])
+
+    def test_empty_merge_base_uses_upstream_when_remote_exists(self):
+        self.git("remote", "add", "upstream", "https://example.invalid/upstream.git")
+        self.git("update-ref", "refs/remotes/upstream/main", self.base)
+        self.write("internal/a/code.go", "package a\n\nconst Value = 2\n")
+        result, output = self.run_lint(BASE_REF="", LINT_CHANGED_BASE_MODE="merge-base")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIsNotNone(output, result.stdout + result.stderr)
+        self.assertEqual(self.packages(output), ["./internal/a"])
+        self.assertIn("since upstream/main", result.stderr)
+        self.assertIn("+const Value = 2", output["patch"])
+
+    def test_default_base_uses_origin_without_upstream_remote(self):
+        self.git("remote", "add", "origin", "https://example.invalid/fork.git")
+        self.git("update-ref", "refs/remotes/origin/main", self.base)
+        self.git("update-ref", "refs/remotes/upstream/main", self.base)
+        self.write("internal/a/code.go", "package a\n\nconst Value = 2\n")
+        self.env.pop("BASE_REF")
+        result, output = self.run_lint()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIsNotNone(output, result.stdout + result.stderr)
+        self.assertEqual(self.packages(output), ["./internal/a"])
+        self.assertIn("since origin/main", result.stderr)
+        self.assertIn("+const Value = 2", output["patch"])
+
     def test_local_committed_staged_unstaged_and_untracked_changes(self):
         self.write("internal/a/code.go", "package a\n\nconst Value = 2\n")
         self.commit()

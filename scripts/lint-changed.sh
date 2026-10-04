@@ -3,8 +3,9 @@
 # Local runs include committed, staged, unstaged and untracked edits and enable
 # gocritic. CI sets LINT_CHANGED_CI=1 because it runs gocritic full-tree separately.
 #
-# Usage: scripts/lint-changed.sh [golangci-lint flags...]
-# BASE_REF defaults to origin/main. LINT_CHANGED_BASE_MODE defaults to merge-base
+# Usage: scripts/lint-changed.sh [--print-base-ref | golangci-lint flags...]
+# BASE_REF defaults to upstream/main when an upstream remote exists, otherwise
+# origin/main. LINT_CHANGED_BASE_MODE defaults to merge-base
 # for PR/local comparisons; revision compares exactly BASE_REF (a push's before
 # SHA). An unavailable comparison runs unfiltered lint over the whole tree.
 set -euo pipefail
@@ -19,10 +20,17 @@ case "$ci_mode" in
 	0 | 1) ;;
 	*) echo "lint-changed: LINT_CHANGED_CI must be 0 or 1" >&2; exit 2 ;;
 esac
-if [[ "$base_mode" == revision ]]; then
-	base_ref=${BASE_REF-}
-else
-	base_ref=${BASE_REF:-origin/main}
+base_ref=${BASE_REF-}
+if [[ -z "$base_ref" && ( "$base_mode" == merge-base || "${1-}" == --print-base-ref ) ]]; then
+	if git remote get-url upstream >/dev/null 2>&1; then
+		base_ref=upstream/main
+	else
+		base_ref=origin/main
+	fi
+fi
+if [[ "${1-}" == --print-base-ref ]]; then
+	printf '%s\n' "$base_ref"
+	exit 0
 fi
 
 repo_root=$(git rev-parse --show-toplevel)
