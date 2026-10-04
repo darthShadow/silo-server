@@ -27,7 +27,7 @@ env:
 jobs:
   prune-go-caches:
     name: Prune old Go caches
-    if: ${{ !inputs.self_hosted && github.ref_name == github.event.repository.default_branch && github.event_name != 'pull_request' && github.event_name != 'schedule' }}
+    if: ${{ !inputs.self_hosted && github.ref_name == 'local-main' && github.event_name != 'pull_request' && github.event_name != 'schedule' }}
     runs-on: ubuntu-24.04
     permissions:
       actions: write
@@ -57,12 +57,12 @@ jobs:
             gh cache delete "$cache_id"
           done <<< "$cache_ids"
 
-  # Selection runs on a hosted runner and uses trusted tools from main, even
-  # when a PR checks out an older or modified copy of those tools. Every
+  # Selection runs on a hosted runner and uses tools from this workflow's
+  # commit, including changes to those tools in a PR. Every
   # private-runner job waits for it, so it does nothing else.
   #
-  # The tools come from a sparse checkout of this workflow's own commit on
-  # main rather than `uses: Silo-Server/silo-server/...@main`, which downloads
+  # The tools come from a sparse checkout of this workflow's own commit
+  # rather than a remote action reference, which downloads
   # a tarball of the whole repository (about 290 MB) and took 15-20 s per job.
   # Pinning to job.workflow_sha gives every run, including a re-run, tools
   # from the same commit as its job list. The checkout holds no Go files,
@@ -87,8 +87,8 @@ jobs:
       - name: Check out the CI tools from main
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          repository: Silo-Server/silo-server
-          ref: ${{ job.workflow_sha || 'refs/heads/main' }}
+          repository: ${{ github.repository }}
+          ref: ${{ job.workflow_sha || github.sha }}
           path: .ci-tools
           fetch-depth: 1
           sparse-checkout: |
@@ -186,16 +186,14 @@ jobs:
         run: make verify-local-paths
       # Linux checks out two paths that differ only in case without
       # complaint; macOS and Windows builds then fail. Like the selection
-      # tools, the checker comes from this workflow's commit on main, so a
-      # branch cannot skip it by deleting or editing its own copy, and a
-      # branch cut before the checker existed is checked too. A change to the
-      # checker gates later runs once it merges; its tests run in Go test.
+      # tools, the checker comes from this workflow's commit, including any
+      # changes to its copy on a branch. Its tests run in Go test.
       # After the PR checkout, which would otherwise clean it away.
       - name: Check out the case-collision checker from main
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          repository: Silo-Server/silo-server
-          ref: ${{ job.workflow_sha || 'refs/heads/main' }}
+          repository: ${{ github.repository }}
+          ref: ${{ job.workflow_sha || github.sha }}
           path: .ci-tools
           fetch-depth: 1
           sparse-checkout: |
@@ -209,7 +207,7 @@ jobs:
         with:
           go-version: '>=1.26 <1.27'
           cache: false
-      # Equivalent to make verify-case-collisions with main's checker. It
+      # Equivalent to make verify-case-collisions with this workflow's checker. It
       # lists the files tracked in the PR checkout; .ci-tools is untracked.
       - name: Verify no tracked paths collide ignoring case
         run: |
@@ -349,8 +347,8 @@ jobs:
       - name: Check out the CI tools from main
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          repository: Silo-Server/silo-server
-          ref: ${{ job.workflow_sha || 'refs/heads/main' }}
+          repository: ${{ github.repository }}
+          ref: ${{ job.workflow_sha || github.sha }}
           path: .ci-tools
           fetch-depth: 1
           sparse-checkout: |
@@ -435,18 +433,25 @@ jobs:
       #   run: depaware ./...
       # Not measured; needs a prototype with reviewed edge allowances.
 
+      # local-main is rebased and force-pushed onto upstream main, so the
+      # push event's previous commit may be gone; lint the fork's own changes
+      # against upstream main instead.
+      - name: Fetch upstream main for the lint base
+        if: github.event_name != 'pull_request'
+        run: git fetch --no-tags https://github.com/Silo-Server/silo-server.git +refs/heads/main:refs/remotes/upstream/main
+
       - name: Run Go lint and contract checks
         shell: bash
         env:
-          LINT_BASE_REF: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event_name == 'push' && github.event.before || format('origin/{0}', github.event.repository.default_branch) }}
-          LINT_BASE_MODE: ${{ github.event_name == 'pull_request' && 'pr-merge' || github.event_name == 'push' && 'revision' || 'merge-base' }}
+          LINT_BASE_REF: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || 'upstream/main' }}
+          LINT_BASE_MODE: ${{ github.event_name == 'pull_request' && 'pr-merge' || 'merge-base' }}
           LINT_CHANGED_TARGET_REF: ${{ format('origin/{0}', github.event.repository.default_branch) }}
           LINT_CHANGED_FULL_TREE: ${{ (github.event_name == 'schedule' || github.repository == 'Silo-Server/silo-server' && github.ref_name == 'main') && '1' || '0' }}
-          CONTRACT_BASE_REF: ${{ github.base_ref || github.event.repository.default_branch }}
+          CONTRACT_BASE_REF: ${{ github.base_ref || 'local-main' }}
         run: make -f .ci-tools/.github/actions/ci-tools/go-checks.mk --keep-going lint contracts
 
       - name: Save the Go cache
-        if: success() && runner.environment == 'github-hosted' && github.ref_name == github.event.repository.default_branch && github.event_name != 'pull_request' && github.event_name != 'schedule'
+        if: success() && runner.environment == 'github-hosted' && github.ref_name == 'local-main' && github.event_name != 'pull_request' && github.event_name != 'schedule'
         uses: ./.github/actions/save-go-cache
         with:
           job-status: ${{ job.status }}
@@ -474,8 +479,8 @@ jobs:
       - name: Check out the CI tools from main
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          repository: Silo-Server/silo-server
-          ref: ${{ job.workflow_sha || 'refs/heads/main' }}
+          repository: ${{ github.repository }}
+          ref: ${{ job.workflow_sha || github.sha }}
           path: .ci-tools
           fetch-depth: 1
           sparse-checkout: |
@@ -511,7 +516,7 @@ jobs:
           make -f .ci-tools/.github/actions/ci-tools/go-checks.mk tests
 
       - name: Save the Go cache
-        if: ${{ !cancelled() && runner.environment == 'github-hosted' && github.ref_name == github.event.repository.default_branch && github.event_name != 'pull_request' && github.event_name != 'schedule' }}
+        if: ${{ !cancelled() && runner.environment == 'github-hosted' && github.ref_name == 'local-main' && github.event_name != 'pull_request' && github.event_name != 'schedule' }}
         uses: ./.github/actions/save-go-cache
         with:
           job-status: ${{ job.status }}
@@ -522,7 +527,7 @@ jobs:
       # Scheduled executions refresh modules under the existing policy, while
       # the composite action never prunes or saves compiled entries on schedule.
       - name: Save the shared module cache on schedule
-        if: ${{ !cancelled() && runner.environment == 'github-hosted' && github.ref_name == github.event.repository.default_branch && github.event_name == 'schedule' }}
+        if: ${{ !cancelled() && runner.environment == 'github-hosted' && github.ref_name == 'local-main' && github.event_name == 'schedule' }}
         uses: ./.github/actions/save-go-cache
         with:
           job-status: ${{ job.status }}
@@ -625,7 +630,7 @@ jobs:
         run: cd cmd/silo && "$RUNNER_TEMP/race/silo.test" -test.run='^TestCompatDetailServiceResolvesViewerSubtitleDefaultsPostgres$' -test.count=1 -test.timeout=10m
 
       - name: Save the Go cache
-        if: success() && runner.environment == 'github-hosted' && github.ref_name == github.event.repository.default_branch && github.event_name != 'pull_request' && github.event_name != 'schedule'
+        if: success() && runner.environment == 'github-hosted' && github.ref_name == 'local-main' && github.event_name != 'pull_request' && github.event_name != 'schedule'
         uses: ./.github/actions/save-go-cache
         with:
           job-status: ${{ job.status }}
@@ -680,7 +685,7 @@ jobs:
         run: make test-db-pins
 
       - name: Save the Go cache
-        if: success() && runner.environment == 'github-hosted' && github.ref_name == github.event.repository.default_branch && github.event_name != 'pull_request' && github.event_name != 'schedule'
+        if: success() && runner.environment == 'github-hosted' && github.ref_name == 'local-main' && github.event_name != 'pull_request' && github.event_name != 'schedule'
         uses: ./.github/actions/save-go-cache
         with:
           job-status: ${{ job.status }}
@@ -747,7 +752,7 @@ jobs:
           (cd internal/plugins && "$RUNNER_TEMP/race/plugins.test" -test.run='^TestUpsertAuthBindingAllows(OneEnabledProvider|NetworkProviderBesidePrimary)$' -test.count=1 -test.timeout=10m)
 
       - name: Save the Go cache
-        if: success() && runner.environment == 'github-hosted' && github.ref_name == github.event.repository.default_branch && github.event_name != 'pull_request' && github.event_name != 'schedule'
+        if: success() && runner.environment == 'github-hosted' && github.ref_name == 'local-main' && github.event_name != 'pull_request' && github.event_name != 'schedule'
         uses: ./.github/actions/save-go-cache
         with:
           job-status: ${{ job.status }}
@@ -943,8 +948,8 @@ jobs:
       - name: Check out the CI tools from main
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          repository: Silo-Server/silo-server
-          ref: ${{ job.workflow_sha || 'refs/heads/main' }}
+          repository: ${{ github.repository }}
+          ref: ${{ job.workflow_sha || github.sha }}
           path: .ci-tools
           fetch-depth: 1
           sparse-checkout: |

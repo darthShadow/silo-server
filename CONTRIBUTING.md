@@ -205,7 +205,7 @@ make embed-stub
 go build ./...
 gofmt -l .                      # must print nothing
 go vet ./...
-make lint-changed                   # BASE_REF=origin/<pr-base> when not main
+make lint-changed                   # see BASE_REF guidance below
 make lint-router-recovery
 make test-go
 
@@ -227,7 +227,7 @@ make verify-migration-ledger
 make verify-scenario-catalogs
 make verify-offline-routes
 make verify-apiv2-openapi
-make verify-apiv2-contract          # BASE_REF=origin/<pr-base> when not main
+make verify-apiv2-contract          # see BASE_REF guidance below
 make verify-apiv2-fixtures
 go test -count=1 -run '^TestCommittedArtifactMatchesRouter$' ./internal/apiv2/
 make verify-local-paths
@@ -245,6 +245,14 @@ make verify-prometheus-rules
 The Web lint gate uses ESLint's bulk suppressions for existing findings.
 After fixing a suppressed finding, run `cd web && pnpm run lint:prune` and
 include the updated `eslint-suppressions.json` in the change.
+
+`make lint-changed`, a direct `scripts/lint-changed.sh` run, and
+`make verify-apiv2-contract` default to `upstream/main` when the checkout has an
+`upstream` remote, otherwise `origin/main`. For a PR targeting another branch,
+pass `BASE_REF=upstream/<pr-base>` in a fork checkout, or
+`BASE_REF=origin/<pr-base>` without an `upstream` remote. A non-empty `BASE_REF`
+overrides the default. An empty one takes the default for `make lint-changed`
+and fails `make verify-apiv2-contract` with a missing merge base.
 
 PR CI selects Go or Web jobs from a complete diff. Shared contracts, generated
 bindings, workflow changes, unknown inputs, and unavailable diffs run both
