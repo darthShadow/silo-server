@@ -458,10 +458,14 @@ jobs:
           go test -race -count=1 -run '^TestUpsertAuthBindingAllows(OneEnabledProvider|NetworkProviderBesidePrimary)$' ./internal/plugins/
 
   web:
-    name: Web
+    name: Web (${{ matrix.part }})
     needs: select
     if: ${{ !cancelled() && (needs.select.result != 'success' || needs.select.outputs.web != 'false') }}
     runs-on: ${{ inputs.self_hosted && (github.repository == 'Silo-Server/silo-server' && ((github.event_name == 'pull_request' && contains(fromJSON(vars.SILO_CI_MEMBERS || '[]'), github.event.pull_request.user.login)) || (github.event_name != 'pull_request' && contains(fromJSON('["refs/heads/main","refs/heads/apiv2"]'), github.ref)))) && fromJSON(format('["self-hosted","linux","x64","silo-linux","silo-run-{0}-{1}","silo-job-web"]', github.run_id, github.run_attempt)) || 'ubuntu-latest' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        part: [build, checks]
     defaults:
       run:
         working-directory: web
@@ -495,6 +499,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Lint
+        if: matrix.part == 'checks'
         env:
           CACHE_ID: ${{ hashFiles('web/pnpm-lock.yaml', 'web/eslint.config.*') }}
         run: |
@@ -507,6 +512,7 @@ jobs:
           fi
 
       - name: Format check
+        if: matrix.part == 'checks'
         env:
           CACHE_ID: ${{ hashFiles('web/pnpm-lock.yaml', 'web/.prettierrc*', 'web/.prettierignore', 'web/prettier.config.*', 'web/tailwind.config.*') }}
         run: |
@@ -519,15 +525,20 @@ jobs:
           fi
 
       - name: Typecheck and build
-        run: pnpm run build
+        if: matrix.part == 'build'
+        run: |
+          pnpm exec tsc -b &
+          pnpm exec vite build
+          wait $!
 
       # Fails when the launch bundle grows past web/perf-budget.json, and when it
       # shrinks without the budget following it down.
       - name: Check the launch bundle budget
+        if: matrix.part == 'build'
         run: pnpm run budget:check
 
       - name: Upload frontend bundle for image builds
-        if: github.event_name == 'push' && contains(fromJSON('["refs/heads/main","refs/heads/apiv2"]'), github.ref)
+        if: matrix.part == 'build' && github.event_name == 'push' && contains(fromJSON('["refs/heads/main","refs/heads/apiv2"]'), github.ref)
         uses: actions/upload-artifact@v4
         with:
           name: frontend-dist-${{ github.sha }}
@@ -539,12 +550,14 @@ jobs:
       # the bindings check lives here rather than in the Go job, which has no
       # pnpm. It needs Go to run the generator.
       - name: Set up Go
+        if: matrix.part == 'checks'
         uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
           cache: ${{ runner.environment == 'github-hosted' }}
 
       - name: Verify the generated web settings binding is current
+        if: matrix.part == 'checks'
         working-directory: .
         run: make verify-settings-bindings-web
 
@@ -553,6 +566,7 @@ jobs:
       # fresh generation so the typed request boundary never drifts from the
       # spec the server serves.
       - name: Verify the generated web v2 contract types are current
+        if: matrix.part == 'checks'
         working-directory: .
         run: make verify-apiv2-web-types
 
