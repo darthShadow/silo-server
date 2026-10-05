@@ -55,7 +55,19 @@ runs:
       run: echo "version=$(go env GOVERSION)" >> "$GITHUB_OUTPUT"
 
     - name: Restore the Go build and module cache
-      if: runner.environment == 'github-hosted'
+      if: runner.environment == 'github-hosted' && github.event_name == 'pull_request'
+      uses: actions/cache/restore@v4
+      with:
+        path: |
+          ~/.cache/go-build
+          ~/go/pkg/mod
+        key: go-${{ inputs.cache-name }}-${{ runner.os }}-${{ steps.go.outputs.version }}-${{ hashFiles('go.sum') }}-${{ github.sha }}
+        restore-keys: |
+          go-${{ inputs.cache-name }}-${{ runner.os }}-${{ steps.go.outputs.version }}-${{ hashFiles('go.sum') }}-
+          go-${{ inputs.cache-name }}-${{ runner.os }}-${{ steps.go.outputs.version }}-
+
+    - name: Restore and save the Go build and module cache
+      if: runner.environment == 'github-hosted' && github.event_name != 'pull_request'
       uses: actions/cache@v4
       with:
         path: |

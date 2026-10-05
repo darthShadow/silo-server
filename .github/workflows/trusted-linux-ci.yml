@@ -199,7 +199,16 @@ jobs:
           fi
 
       - name: Restore the golangci-lint analysis cache
-        if: runner.environment == 'github-hosted'
+        if: runner.environment == 'github-hosted' && github.event_name == 'pull_request'
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/.cache/golangci-lint
+          key: golangci-lint-cache-${{ runner.os }}-${{ env.GOLANGCI_LINT_VERSION }}-${{ github.sha }}
+          restore-keys: |
+            golangci-lint-cache-${{ runner.os }}-${{ env.GOLANGCI_LINT_VERSION }}-
+
+      - name: Restore and save the golangci-lint analysis cache
+        if: runner.environment == 'github-hosted' && github.event_name != 'pull_request'
         uses: actions/cache@v4
         with:
           path: ~/.cache/golangci-lint
