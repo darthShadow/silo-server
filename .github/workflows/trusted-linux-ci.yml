@@ -305,6 +305,8 @@ jobs:
 
   go-test:
     name: Go test
+    env:
+      GOFLAGS: ${{ github.event_name == 'schedule' && '-count=1' || '' }}
     needs: select
     if: ${{ !cancelled() && (needs.select.result != 'success' || needs.select.outputs.go != 'false') }}
     runs-on: ${{ inputs.self_hosted && (github.repository == 'Silo-Server/silo-server' && ((github.event_name == 'pull_request' && contains(fromJSON(vars.SILO_CI_MEMBERS || '[]'), github.event.pull_request.user.login)) || (github.event_name != 'pull_request' && contains(fromJSON('["refs/heads/main","refs/heads/apiv2"]'), github.ref)))) && fromJSON(format('["self-hosted","linux","x64","silo-linux","silo-run-{0}-{1}","silo-job-go-test"]', github.run_id, github.run_attempt)) || 'ubuntu-latest' }}
@@ -319,11 +321,23 @@ jobs:
         with:
           cache-name: test
 
+      - name: Normalize tracked source mtimes
+        run: python3 scripts/ci/content_mtimes.py
+
       # Owns all package assertions, including ledger/scenario/offline/spec
       # and fixture generation/schema checks previously repeated in verify.
       # Compiles every package on the way; no separate build step is needed.
       - name: Test
         run: make test-go
+
+      - name: Rerun tests with subprocess inputs
+        shell: bash
+        run: |
+          uncached=(cmd/silo internal/jellycompat internal/pluginhost internal/plugins)
+          immutable=(internal/contractledger internal/contractspec internal/debugserver)
+          actual=$(git grep -l -E '(exec\.Command(Context)?\(([^,]+, )?"(go|git|node)"|LookPath\("(go|git|node)"\))' -- '*_test.go' | sed 's@/[^/]*$@@' | sort -u)
+          diff -u <(printf '%s\n' "${uncached[@]}" "${immutable[@]}" | sort -u) <(printf '%s\n' "$actual")
+          go test -count=1 "${uncached[@]/#/./}"
 
   go-integration:
     name: Go integration

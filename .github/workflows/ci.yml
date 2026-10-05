@@ -9,9 +9,11 @@ on:
       # here first; the merge commits need the same gate as main.
       - apiv2
   workflow_dispatch:
+  schedule:
+    - cron: '23 4 * * 1'
 
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ci-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: true
 
 env:
