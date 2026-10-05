@@ -544,14 +544,14 @@ jobs:
 
 
   web-test:
-    name: Web test (${{ matrix.shard }}/2)
+    name: Web test (${{ matrix.shard }}/6)
     needs: select
     if: ${{ !cancelled() && (needs.select.result != 'success' || needs.select.outputs.web != 'false') }}
     runs-on: ${{ inputs.self_hosted && (github.repository == 'Silo-Server/silo-server' && ((github.event_name == 'pull_request' && contains(fromJSON(vars.SILO_CI_MEMBERS || '[]'), github.event.pull_request.user.login)) || (github.event_name != 'pull_request' && contains(fromJSON('["refs/heads/main","refs/heads/apiv2"]'), github.ref)))) && fromJSON(format('["self-hosted","linux","x64","silo-linux","silo-run-{0}-{1}","silo-job-web-test-{2}"]', github.run_id, github.run_attempt, matrix.shard)) || 'ubuntu-latest' }}
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2]
+        shard: [1, 2, 3, 4, 5, 6]
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -582,10 +582,10 @@ jobs:
 
       # Includes the appearance-cache ownership tests, which are the regression
       # guard for cross-account leaks in the localStorage warm start. The
-      # suite is split across two runners; vitest assigns files to a shard
+      # suite is split across six runners; vitest assigns files to a shard
       # deterministically, so every file runs exactly once.
       - name: Test
-        run: make test-web WEBTEST_ARGS="--shard=${{ matrix.shard }}/2"
+        run: make test-web WEBTEST_ARGS="--shard=${{ matrix.shard }}/6"
 
   result:
     name: CI result
