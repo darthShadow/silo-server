@@ -20,18 +20,23 @@ runs:
     - name: Install libvips
       shell: bash
       run: |
+        : > "$RUNNER_TEMP/libvips.log"
         # The disposable private runner image already includes these headers.
         if pkg-config --exists vips; then
+          echo 0 > "$RUNNER_TEMP/libvips.status"
           exit 0
         fi
-        # libvips and its dependencies use the runner's official Ubuntu sources.
-        test -f /etc/apt/sources.list.d/ubuntu.sources
-        apt_options=(
-          -o Dir::Etc::sourcelist=/etc/apt/sources.list.d/ubuntu.sources
-          -o Dir::Etc::sourceparts=-
-        )
-        sudo apt-get "${apt_options[@]}" update
-        sudo apt-get "${apt_options[@]}" install -y --no-install-recommends libvips-dev
+        (
+          trap 'echo "$?" > "$RUNNER_TEMP/libvips.status"' EXIT
+          # libvips and its dependencies use the runner's official Ubuntu sources.
+          test -f /etc/apt/sources.list.d/ubuntu.sources
+          apt_options=(
+            -o Dir::Etc::sourcelist=/etc/apt/sources.list.d/ubuntu.sources
+            -o Dir::Etc::sourceparts=-
+          )
+          sudo apt-get "${apt_options[@]}" update
+          sudo apt-get "${apt_options[@]}" install -y --no-install-recommends libvips-dev
+        ) > "$RUNNER_TEMP/libvips.log" 2>&1 &
 
     # setup-go's own cache is keyed on go.sum alone and written only on a
     # miss, so between dependency bumps every run restored a build cache
@@ -67,3 +72,10 @@ runs:
     - name: Stub the embedded frontend bundle
       shell: bash
       run: make embed-stub
+
+    - name: Wait for libvips
+      shell: bash
+      run: |
+        timeout 60 sh -c 'until [ -s "$RUNNER_TEMP/libvips.status" ]; do sleep 1; done'
+        cat "$RUNNER_TEMP/libvips.log"
+        exit "$(cat "$RUNNER_TEMP/libvips.status")"

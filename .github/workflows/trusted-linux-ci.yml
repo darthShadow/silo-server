@@ -330,21 +330,10 @@ jobs:
     needs: select
     if: ${{ !cancelled() && (needs.select.result != 'success' || needs.select.outputs.go != 'false') }}
     runs-on: ${{ inputs.self_hosted && (github.repository == 'Silo-Server/silo-server' && ((github.event_name == 'pull_request' && contains(fromJSON(vars.SILO_CI_MEMBERS || '[]'), github.event.pull_request.user.login)) || (github.event_name != 'pull_request' && contains(fromJSON('["refs/heads/main","refs/heads/apiv2"]'), github.ref)))) && fromJSON(format('["self-hosted","linux","x64","silo-linux","silo-run-{0}-{1}","silo-job-go-integration"]', github.run_id, github.run_attempt)) || 'ubuntu-latest' }}
-    services:
-      watch-party-postgres:
-        image: postgres:17-alpine
-        env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: watch_party
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U postgres -d watch_party"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 10
     steps:
+      - name: Start Postgres
+        run: docker run -d --rm --cidfile "$RUNNER_TEMP/pg" -p 5432:5432 --tmpfs /var/lib/postgresql/data -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=watch_party postgres:17-alpine &
+
       - name: Checkout
         uses: actions/checkout@v5
         with:
@@ -353,6 +342,11 @@ jobs:
         uses: ./.github/actions/setup-go
         with:
           cache-name: integration
+
+      - name: Wait for Postgres
+        run: |
+          # shellcheck disable=SC2016
+          timeout 60 sh -c 'until docker exec "$(cat "$RUNNER_TEMP/pg")" pg_isready -h 127.0.0.1 -U postgres -d watch_party; do sleep 1; done'
 
       - name: Test Watch Party coordination against Postgres
         env:
@@ -391,24 +385,13 @@ jobs:
     needs: select
     if: ${{ !cancelled() && (needs.select.result != 'success' || needs.select.outputs.go != 'false') }}
     runs-on: ${{ inputs.self_hosted && (github.repository == 'Silo-Server/silo-server' && ((github.event_name == 'pull_request' && contains(fromJSON(vars.SILO_CI_MEMBERS || '[]'), github.event.pull_request.user.login)) || (github.event_name != 'pull_request' && contains(fromJSON('["refs/heads/main","refs/heads/apiv2"]'), github.ref)))) && fromJSON(format('["self-hosted","linux","x64","silo-linux","silo-run-{0}-{1}","silo-job-go-db-pins"]', github.run_id, github.run_attempt)) || 'ubuntu-latest' }}
-    services:
-      # The image docker-compose.yml runs: the schema needs pgvector.
-      postgres:
-        image: pgvector/pgvector:pg18
-        env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: silo_test
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U postgres -d silo_test"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 10
     env:
       SILO_TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/silo_test?sslmode=disable
     steps:
+      # The image docker-compose.yml runs: the schema needs pgvector.
+      - name: Start Postgres
+        run: docker run -d --rm --cidfile "$RUNNER_TEMP/pg" -p 5432:5432 --tmpfs /var/lib/postgresql -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=silo_test pgvector/pgvector:pg18 &
+
       - name: Checkout
         uses: actions/checkout@v5
         with:
@@ -418,6 +401,11 @@ jobs:
         uses: ./.github/actions/setup-go
         with:
           cache-name: db-pins
+
+      - name: Wait for Postgres
+        run: |
+          # shellcheck disable=SC2016
+          timeout 60 sh -c 'until docker exec "$(cat "$RUNNER_TEMP/pg")" pg_isready -h 127.0.0.1 -U postgres -d silo_test; do sleep 1; done'
 
       # A throwaway key: it only has to pass the bootstrap length check, and
       # nothing encrypted with it outlives the job.
