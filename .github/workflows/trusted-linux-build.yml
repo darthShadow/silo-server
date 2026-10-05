@@ -133,15 +133,9 @@ jobs:
             BUILD_DIRTY=false
             BUILD_NUMBER=${{ inputs.build_number }}
             BUILD_DATE=${{ inputs.built_at }}
-          cache-from: ${{ runner.environment == 'self-hosted' && format('type=local,src=/cache/buildkit/{0}', env.PLATFORM_PAIR) || format('type=gha,scope=docker-{0}', env.PLATFORM_PAIR) }}
-          cache-to: ${{ runner.environment == 'self-hosted' && format('type=local,dest=/cache/buildkit/{0}-new,mode=max', env.PLATFORM_PAIR) || format('type=gha,scope=docker-{0},mode=max', env.PLATFORM_PAIR) }}
+          cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_LC }}:buildcache-${{ env.PLATFORM_PAIR }}
+          cache-to: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_LC }}:buildcache-${{ env.PLATFORM_PAIR }},mode=max,image-manifest=true,oci-mediatypes=true
           outputs: type=image,name=${{ env.REGISTRY }}/${{ env.IMAGE_LC }},push-by-digest=true,name-canonical=true,push=true
-
-      - name: Keep the local Docker layer cache
-        if: runner.environment == 'self-hosted' && steps.build.outcome == 'success'
-        run: |
-          rm -rf "/cache/buildkit/${PLATFORM_PAIR}"
-          mv "/cache/buildkit/${PLATFORM_PAIR}-new" "/cache/buildkit/${PLATFORM_PAIR}"
 
       - name: Export digest
         run: |
