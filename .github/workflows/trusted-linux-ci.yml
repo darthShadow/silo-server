@@ -599,7 +599,7 @@ jobs:
       # suite is split across six runners; vitest assigns files to a shard
       # deterministically, so every file runs exactly once.
       - name: Test
-        run: make test-web WEBTEST_ARGS="--shard=${{ matrix.shard }}/6"
+        run: make test-web WEBTEST_ARGS="--shard=${{ matrix.shard }}/6 --maxWorkers=4"
 
   result:
     name: CI result
