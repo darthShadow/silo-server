@@ -156,6 +156,13 @@
 ./internal/metadata TestRescanAfterSplitKeepsTaggedMovieApartDB
 ./internal/metadata TestScanKeepsTaggedMovieApartFromTitleWithItsTaggedIDDB
 
+# Whole-library ingest: a rescan that finds nothing changed runs no probe and
+# has an exact per-table write ratchet and per-phase statement budget.
+./internal/metadata TestScanCostNoopRescanDB
+# The scan-cost write counter sees writes inside CTEs and triggers, and
+# setup writes do not leak into a measured interval.
+./internal/metadata TestScanCostCounterSeesNestedWritesDB
+
 # A corrected Identify moves a series and its anchored children in one rename.
 ./internal/metadata TestIdentify_CorrectedSeriesMovesWithItsChildren
 ./internal/metadata TestIdentify_CorrectionOntoExistingSeriesMovesUnpairedEpisodeState
