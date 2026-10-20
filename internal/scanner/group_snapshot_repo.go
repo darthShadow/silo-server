@@ -10,6 +10,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/Silo-Server/silo-server/internal/models"
+	"github.com/Silo-Server/silo-server/internal/pathscope"
 )
 
 type ScannedGroupRepository struct {
@@ -277,28 +278,24 @@ func (r *ScannedGroupRepository) ReplaceForFolder(ctx context.Context, folderID 
 	return nil
 }
 
+// ReplaceInScope reconciles a folder's groups whose sample root lies at or
+// under scopePath with groups, the complete set a scan saw there. Seen groups
+// keep their row and first_seen_at, and last_seen_at advances; groups in scope
+// that are not passed are deleted, so an empty list clears the scope. The
+// upserts and the delete commit together or not at all.
 func (r *ScannedGroupRepository) ReplaceInScope(
 	ctx context.Context,
 	folderID int,
 	scopePath string,
 	groups []models.ScannedMediaGroup,
 ) error {
-	tx, err := r.pool.Begin(ctx)
-	if err != nil {
-		return fmt.Errorf("begin scanned group scoped replace transaction: %w", err)
-	}
-	defer tx.Rollback(ctx) //nolint:errcheck
-
-	if _, err := tx.Exec(ctx, `
-		DELETE FROM scanned_media_groups
-		WHERE media_folder_id = $1
-		  AND (sample_observed_root_path = $2 OR strpos(sample_observed_root_path, $2 || '/') = 1)
-	`, folderID, scopePath); err != nil {
-		return fmt.Errorf("clearing scanned media groups in scope: %w", err)
-	}
-
+	// One batch keeps the upserts and prune atomic and gives them the same NOW().
 	batch := &pgx.Batch{}
+	seenVersions := make([]int, 0, len(groups))
+	seenKeys := make([]string, 0, len(groups))
 	for _, group := range groups {
+		seenVersions = append(seenVersions, group.GroupKeyVersion)
+		seenKeys = append(seenKeys, group.ContentGroupKey)
 		batch.Queue(`
 			INSERT INTO scanned_media_groups (
 				media_folder_id, group_key_version, content_group_key, state, inferred_type,
@@ -344,18 +341,43 @@ func (r *ScannedGroupRepository) ReplaceInScope(
 			group.OverrideSource,
 		)
 	}
-	results := tx.SendBatch(ctx, batch)
-	for range groups {
+	// Match complete keys; an empty observation set prunes the whole scope.
+	batch.Queue(`
+		DELETE FROM scanned_media_groups t
+		WHERE t.media_folder_id = $1
+		  AND (t.sample_observed_root_path = $2 OR strpos(t.sample_observed_root_path, $2 || '/') = 1)
+		  AND NOT EXISTS (SELECT 1 FROM unnest($3::int[], $4::text[]) AS s(v, k)
+		                  WHERE s.v = t.group_key_version AND s.k = t.content_group_key)
+	`, folderID, scopePath, seenVersions, seenKeys)
+	results := r.pool.SendBatch(ctx, batch)
+	for range batch.Len() {
 		if _, err := results.Exec(); err != nil {
 			_ = results.Close()
-			return fmt.Errorf("inserting scanned media groups in scope: %w", err)
+			return fmt.Errorf("reconciling scanned media groups in scope: %w", err)
 		}
 	}
 	if err := results.Close(); err != nil {
 		return fmt.Errorf("closing scanned group scoped batch: %w", err)
 	}
-	if err := tx.Commit(ctx); err != nil {
-		return fmt.Errorf("commit scanned group scoped replace transaction: %w", err)
+	return nil
+}
+
+// DeleteOutsideRoots removes a folder's groups whose sample observed root path
+// lies outside every configured root. Rows at or under any root survive even
+// when it is unreachable. An empty roots list sends no statement. It returns an
+// error if the delete fails.
+func (r *ScannedGroupRepository) DeleteOutsideRoots(ctx context.Context, folderID int, roots []string) error {
+	if len(roots) == 0 {
+		return nil
+	}
+	clauses, rootArgs := pathscope.CoverageClauses("sample_observed_root_path", roots, 2)
+	args := append([]any{folderID}, rootArgs...)
+	_, err := r.pool.Exec(ctx, `
+		DELETE FROM scanned_media_groups
+		WHERE media_folder_id = $1 AND NOT (`+strings.Join(clauses, " OR ")+`)
+	`, args...)
+	if err != nil {
+		return fmt.Errorf("deleting scanned media groups outside roots: %w", err)
 	}
 	return nil
 }

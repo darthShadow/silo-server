@@ -622,8 +622,12 @@ func (e *Executor) reconcileSkippedRoots(
 
 	for _, observation := range observations {
 		if observation.HasProviderIDs {
-			if err := e.skippedRootRepo.Delete(ctx, folderID, observation.RootPath); err != nil {
-				return fmt.Errorf("clear skipped root %q: %w", observation.RootPath, err)
+			// The library sweep keeps only untagged roots, so it clears tagged
+			// rows too. Scoped sweeps keep all observed roots and need this delete.
+			if mode != scopeModeLibrary {
+				if err := e.skippedRootRepo.Delete(ctx, folderID, observation.RootPath); err != nil {
+					return fmt.Errorf("clear skipped root %q: %w", observation.RootPath, err)
+				}
 			}
 		} else {
 			if err := e.skippedRootRepo.Upsert(ctx, models.SkippedMediaRoot{

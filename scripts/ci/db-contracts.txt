@@ -23,6 +23,18 @@
 ./internal/scanner TestFinalizeVariantsReadsWholeGroupFoundOutsideTheScopeDB
 ./migrations TestScanRunForeignKeysHaveLeadingIndexesDB
 
+# A rescan keeps snapshot first-seen times, advances seen groups and roots, rewrites a
+# location only when it changed, keeps unseen rows after a partial walk, prunes them after
+# a complete walk or a removed library path, and clears a tagged root's skipped row.
+# A scan-warning clear writes only the columns that change.
+./internal/scanner TestRescanKeepsFirstSeenAndAdvancesLastSeenDB
+./internal/scanner TestPartialWalkKeepsUnseenSnapshotsDB
+./internal/scanner TestCompleteRescanPrunesUnseenSnapshotsDB
+./internal/scanner TestLibraryPathReplacementPrunesRemovedPathSnapshotsDB
+./internal/scanner TestRescanRewritesChangedSnapshotsDB
+./internal/catalog TestClearScanWarningWritesOnlyChangesDB
+./internal/metadata TestScanClearsSkippedRowOfTaggedRootDB
+
 # Series air-date sort keys advance when a known episode airs.
 ./internal/catalog TestSeriesAirDatesFollowEpisodesAndCalendarDB
 

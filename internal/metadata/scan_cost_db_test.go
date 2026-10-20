@@ -1184,34 +1184,26 @@ func scanCostCheckFirst(t testing.TB, config *pgxpool.Config, folder *models.Med
 func scanCostNoopWrites(kind string) map[string]scanCostTuples {
 	if kind == "movies" {
 		return map[string]scanCostTuples{
-			// legitimate: 1 last-scanned update; debt: 1 warning rewrite.
-			"media_folders": {upd: 2},
-			// debt: replace unchanged group-location pairs.
-			"media_group_locations": {ins: 40, del: 40},
-			// debt (unpredicted): internal/metadata/movie_match_queue_repo.go:211.
+			// legitimate: last-scanned update.
+			"media_folders": {upd: 1},
+			// legitimate: one-time cleanup; the next sync deletes queue rows the first pass left for files it matched without their own claim.
 			"movie_match_queue": {del: 4},
-			// debt: replace unchanged observed locations.
-			"observed_media_locations": {ins: 40, del: 40},
-			// debt: replace unchanged groups.
-			"scanned_media_groups": {ins: 40, del: 40},
-			// debt: rewrite root last-seen state.
+			// legitimate: last_seen_at of each seen group.
+			"scanned_media_groups": {upd: 40},
+			// legitimate: last_seen_at of each seen root.
 			"scanned_media_roots": {upd: 40},
-			// debt: rewrite unchanged untagged roots.
+			// legitimate: last_seen_at of each seen untagged root.
 			"skipped_media_roots": {upd: 4},
 		}
 	}
 	return map[string]scanCostTuples{
-		// legitimate: 1 last-scanned update; debt: 1 warning rewrite.
-		"media_folders": {upd: 2},
-		// debt: replace unchanged group-location pairs.
-		"media_group_locations": {ins: 6, del: 6},
-		// debt: replace unchanged observed locations.
-		"observed_media_locations": {ins: 6, del: 6},
-		// debt: replace unchanged groups.
-		"scanned_media_groups": {ins: 6, del: 6},
-		// debt: rewrite root last-seen state.
+		// legitimate: last-scanned update.
+		"media_folders": {upd: 1},
+		// legitimate: last_seen_at of each seen group.
+		"scanned_media_groups": {upd: 6},
+		// legitimate: last_seen_at of each seen root.
 		"scanned_media_roots": {upd: 6},
-		// debt: rewrite the unchanged untagged root.
+		// legitimate: last_seen_at of each seen untagged root.
 		"skipped_media_roots": {upd: 1},
 	}
 }
@@ -1231,9 +1223,11 @@ func scanCostCheckNoop(t testing.TB, tree *scanCostTree, pass scanCostPass) {
 		tracer.folderReads, pass.measurement.wall, pass.polls, tracer.exemptCancellations)
 	// A measured no-op pass pins variant reads across both roots, scoped matching plus retry,
 	// and the remaining ingest statements after removing the folder-read bucket.
-	wants := map[string]int64{"finalize": 4, "match": 14, "other": 102}
+	// Other statements: 102 - 12 scoped transaction statements - 5 tagged-root deletes
+	// + 3 outside-roots prunes = 88; movies: 272 - 12 - 36 + 3 = 227.
+	wants := map[string]int64{"finalize": 4, "match": 14, "other": 88}
 	if tree.kind == "movies" {
-		wants["other"] = 272
+		wants["other"] = 227
 	}
 	for _, phase := range []string{"finalize", "match", "other"} {
 		count := tracer.statements[phase]

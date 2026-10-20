@@ -1294,7 +1294,10 @@ func (r *FolderRepository) UpdateScanWarningIfUnchanged(ctx context.Context, id 
 		WHERE id = $1
 			AND scan_warning_code IS NOT DISTINCT FROM $5::text
 			AND scan_warning_message IS NOT DISTINCT FROM $6::text
-			AND scan_warning_at IS NOT DISTINCT FROM $7::timestamptz`,
+			AND scan_warning_at IS NOT DISTINCT FROM $7::timestamptz
+			AND (scan_warning_code, scan_warning_message, scan_warning_at, allow_empty_cleanup_once)
+				IS DISTINCT FROM ($2::text, $3::text, $4::timestamptz,
+					CASE WHEN $2::text IS NULL THEN false ELSE allow_empty_cleanup_once END)`,
 		id, replacement.Code, replacement.Message, replacement.At, expected.Code, expected.Message, expected.At)
 	if err != nil {
 		return fmt.Errorf("updating unchanged scan warning: %w", err)

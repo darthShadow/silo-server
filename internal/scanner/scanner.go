@@ -1475,6 +1475,24 @@ func (s *Scanner) scanFolderByRoots(
 		}
 	}
 
+	// Configured roots include offline and protected paths. Only snapshots
+	// outside that full set belong to paths removed from the library.
+	if s.groupSnapshotRepo != nil {
+		if err := s.groupSnapshotRepo.DeleteOutsideRoots(ctx, folder.ID, roots); err != nil {
+			return nil, fmt.Errorf("pruning scanned groups outside configured roots for folder %d: %w", folder.ID, err)
+		}
+	}
+	if s.locationRepo != nil {
+		if err := s.locationRepo.DeleteOutsideRoots(ctx, folder.ID, roots); err != nil {
+			return nil, fmt.Errorf("pruning observed locations outside configured roots for folder %d: %w", folder.ID, err)
+		}
+	}
+	if s.groupLocationRepo != nil {
+		if err := s.groupLocationRepo.DeleteOutsideRoots(ctx, folder.ID, roots); err != nil {
+			return nil, fmt.Errorf("pruning group locations outside configured roots for folder %d: %w", folder.ID, err)
+		}
+	}
+
 	if s.seriesQueueSyncer != nil {
 		reportProgress(ctx, ProgressUpdate{
 			Phase:        "queue_sync",
